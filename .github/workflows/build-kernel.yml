@@ -89,19 +89,4 @@ jobs:
         with:
           name: StarKernel-${{ github.ref_name }}-${{ github.sha }}
           path: artifacts/
-          retention-days: 7        run: |
-          mkdir -p artifacts
-          cp out/arch/arm64/boot/Image artifacts/
-          [ -f out/arch/arm64/boot/Image.lz4 ] && \
-            cp out/arch/arm64/boot/Image.lz4 artifacts/ || true
-          ls -lh artifacts/
-
-      # ──────────────────────────────────────────────
-      # 8. 上传 Image
-      # ──────────────────────────────────────────────
-      - name: Upload kernel image
-        uses: actions/upload-artifact@v4
-        with:
-          name: StarKernel-${{ github.ref_name }}-${{ github.sha }}
-          path: artifacts/
           retention-days: 7
