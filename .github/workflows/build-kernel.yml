@@ -29,30 +29,28 @@ jobs:
           ref: android14-6.1.162-20260506
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      # 2. 配置并编译内核
+      # 2. 编译内核
       - name: Build Kernel Image
         run: |
-          # 安装最精简的编译依赖（内核自带的只依赖这些）
+          # 安装编译依赖（Clang/LLVM 是 AOSP GKI 必须的）
           sudo apt-get update -y
-          sudo apt-get install -y gcc-aarch64-linux-gnu flex bison bc
+          sudo apt-get install -y clang lld llvm flex bison bc
 
-          # 设置交叉编译环境
+          # 设置 Clang 交叉编译环境
           export ARCH=arm64
-          export CROSS_COMPILE=aarch64-linux-gnu-
+          export LLVM=1
 
-          # 使用 GKI 默认配置
+          # 使用 GKI 基础配置
           make gki_defconfig
 
-          # 写入自定义内核版本号
+          # 写入自定义内核版本号（例如 -StarKernel-26w20sa）
           echo "CONFIG_LOCALVERSION=\"${{ inputs.localversion }}\"" >> .config
 
-          # 根据输入选择 LTO 模式 (thin / full)
+          # 根据输入设置 LTO 模式（thin / full）
           if [ "${{ inputs.lto }}" = "thin" ]; then
             echo "CONFIG_LTO_CLANG_THIN=y" >> .config
-            echo "CONFIG_LTO_CLANG_FULL=n" >> .config
           else
             echo "CONFIG_LTO_CLANG_FULL=y" >> .config
-            echo "CONFIG_LTO_CLANG_THIN=n" >> .config
           fi
 
           # 重新生成完整配置
@@ -63,7 +61,7 @@ jobs:
 
       # 3. 上传产物
       - name: Upload Image
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v5
         with:
           name: Image${{ inputs.localversion }}
           path: arch/arm64/boot/Image
