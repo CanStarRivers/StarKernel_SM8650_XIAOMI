@@ -1,0 +1,70 @@
+name: Build Kernel and Release Image
+
+on:
+  workflow_dispatch:
+    inputs:
+      localversion:
+        description: 'Kernel localversion suffix (e.g., -StarKernel-26w20sa)'
+        required: true
+        type: string
+        default: '-StarKernel'
+      lto:
+        description: 'LTO mode'
+        required: true
+        type: choice
+        options: ['thin', 'full']
+        default: 'thin'
+
+jobs:
+  build-kernel:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+
+    steps:
+      # 1. 检出你的私有源码
+      - name: Checkout Source
+        uses: actions/checkout@v5
+        with:
+          repository: CanStarRivers/StarKernel_SM8650_XIAOMI
+          ref: android14-6.1.162-20260506
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      # 2. 配置并编译内核
+      - name: Build Kernel Image
+        run: |
+          # 安装最精简的编译依赖（内核自带的只依赖这些）
+          sudo apt-get update -y
+          sudo apt-get install -y gcc-aarch64-linux-gnu flex bison bc
+
+          # 设置交叉编译环境
+          export ARCH=arm64
+          export CROSS_COMPILE=aarch64-linux-gnu-
+
+          # 使用 GKI 默认配置
+          make gki_defconfig
+
+          # 写入自定义内核版本号
+          echo "CONFIG_LOCALVERSION=\"${{ inputs.localversion }}\"" >> .config
+
+          # 根据输入选择 LTO 模式 (thin / full)
+          if [ "${{ inputs.lto }}" = "thin" ]; then
+            echo "CONFIG_LTO_CLANG_THIN=y" >> .config
+            echo "CONFIG_LTO_CLANG_FULL=n" >> .config
+          else
+            echo "CONFIG_LTO_CLANG_FULL=y" >> .config
+            echo "CONFIG_LTO_CLANG_THIN=n" >> .config
+          fi
+
+          # 重新生成完整配置
+          make olddefconfig
+
+          # 编译内核镜像
+          make -j$(nproc) Image
+
+      # 3. 上传产物
+      - name: Upload Image
+        uses: actions/upload-artifact@v7
+        with:
+          name: Image${{ inputs.localversion }}
+          path: arch/arm64/boot/Image
+          if-no-files-found: error
