@@ -1,68 +1,119 @@
-name: Build Kernel and Release Image
+# .github/workflows/build-kernel.yml
+name: Build StarKernel
 
 on:
   workflow_dispatch:
-    inputs:
-      localversion:
-        description: 'Kernel localversion suffix (e.g., -StarKernel-26w20sa)'
-        required: true
-        type: string
-        default: '-StarKernel'
-      lto:
-        description: 'LTO mode'
-        required: true
-        type: choice
-        options: ['thin', 'full']
-        default: 'thin'
+  push:
+    branches:
+      - android14-6.1.162-20260506
 
 jobs:
-  build-kernel:
-    runs-on: ubuntu-latest
-    timeout-minutes: 90
+  build:
+    name: Build Kernel (arm64 / android14-6.1)
+    runs-on: ubuntu-22.04
 
     steps:
-      # 1. 检出你的私有源码
-      - name: Checkout Source
-        uses: actions/checkout@v5
-        with:
-          repository: CanStarRivers/StarKernel_SM8650_XIAOMI
-          ref: android14-6.1.162-20260506
-          token: ${{ secrets.GITHUB_TOKEN }}
-
-      # 2. 编译内核
-      - name: Build Kernel Image
+      # ──────────────────────────────────────────────
+      # 1. 释放磁盘空间
+      # ──────────────────────────────────────────────
+      - name: Free disk space
         run: |
-          # 安装编译依赖（Clang/LLVM 是 AOSP GKI 必须的）
-          sudo apt-get update -y
-          sudo apt-get install -y clang lld llvm flex bison bc
+          sudo rm -rf \
+            /opt/hostedtoolcache \
+            /usr/local/lib/android \
+            /usr/share/dotnet \
+            /usr/share/swift
+          df -h
 
-          # 设置 Clang 交叉编译环境
-          export ARCH=arm64
-          export LLVM=1
-
-          # 使用 GKI 基础配置
-          make gki_defconfig
-
-          # 写入自定义内核版本号（例如 -StarKernel-26w20sa）
-          echo "CONFIG_LOCALVERSION=\"${{ inputs.localversion }}\"" >> .config
-
-          # 根据输入设置 LTO 模式（thin / full）
-          if [ "${{ inputs.lto }}" = "thin" ]; then
-            echo "CONFIG_LTO_CLANG_THIN=y" >> .config
-          else
-            echo "CONFIG_LTO_CLANG_FULL=y" >> .config
-          fi
-
-          # 重新生成完整配置
-          make olddefconfig
-
-          # 编译内核镜像
-          make -j$(nproc) Image
-
-      # 3. 上传产物
-      - name: Upload Image
-        uses: actions/upload-artifact@v5
+      # ──────────────────────────────────────────────
+      # 2. Checkout 内核源码
+      # ──────────────────────────────────────────────
+      - name: Checkout kernel source
+        uses: actions/checkout@v4
         with:
-          name: Image${{ inputs.localversion }}
-          path: arch/arm64/boot/Image
-          if-no-files-found: error
+          fetch-depth: 1
+
+      # ──────────────────────────────────────────────
+      # 3. 安装构建依赖
+      # ──────────────────────────────────────────────
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            bc bison build-essential ca-certificates cpio \
+            curl flex git kmod libelf-dev libssl-dev \
+            lz4 make pahole python3 rsync zip zstd
+
+      # ──────────────────────────────────────────────
+      # 4. 下载 AOSP Clang r487747c
+      #    版本来源：build.config.constants (android14-6.1)
+      #    CLANG_VERSION=r487747c
+      # ──────────────────────────────────────────────
+      - name: Download AOSP Clang r487747c
+        run: |
+          CLANG_VERSION="r487747c"
+          CLANG_DIR="$HOME/toolchains/clang-${CLANG_VERSION}"
+          mkdir -p "${CLANG_DIR}"
+
+          echo "Downloading AOSP clang ${CLANG_VERSION} ..."
+          curl -LSs \
+            "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/master/clang-${CLANG_VERSION}.tar.gz" \
+            -o /tmp/clang.tar.gz
+
+          tar -xzf /tmp/clang.tar.gz -C "${CLANG_DIR}"
+          rm /tmp/clang.tar.gz
+
+          # 加入 PATH，后续 step 生效
+          echo "${CLANG_DIR}/bin" >> "$GITHUB_PATH"
+
+          # 验证
+          "${CLANG_DIR}/bin/clang" --version | head -1
+
+      # ──────────────────────────────────────────────
+      # 5. 生成 .config（gki_defconfig）
+      # ──────────────────────────────────────────────
+      - name: Configure kernel
+        run: |
+          make O=out \
+               ARCH=arm64 \
+               LLVM=1 \
+               LLVM_IAS=1 \
+               -j$(nproc) \
+               gki_defconfig
+
+      # ──────────────────────────────────────────────
+      # 6. 编译内核
+      # ──────────────────────────────────────────────
+      - name: Build kernel
+        run: |
+          make O=out \
+               ARCH=arm64 \
+               LLVM=1 \
+               LLVM_IAS=1 \
+               -j$(nproc)
+
+      # ──────────────────────────────────────────────
+      # 7. 收集产物
+      # ──────────────────────────────────────────────
+      - name: Collect artifacts
+        run: |
+          mkdir -p artifacts
+
+          # Image（必须存在，否则编译步骤已失败）
+          cp out/arch/arm64/boot/Image artifacts/
+
+          # Image.lz4（如果 defconfig 启用了 LZ4 压缩则存在）
+          [ -f out/arch/arm64/boot/Image.lz4 ] && \
+            cp out/arch/arm64/boot/Image.lz4 artifacts/ || true
+
+          ls -lh artifacts/
+
+      # ──────────────────────────────────────────────
+      # 8. 上传 Image 产物
+      # ──────────────────────────────────────────────
+      - name: Upload kernel image
+        uses: actions/upload-artifact@v4
+        with:
+          name: StarKernel-${{ github.ref_name }}-${{ github.sha }}
+          path: artifacts/
+          retention-days: 7
