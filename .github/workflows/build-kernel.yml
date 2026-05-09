@@ -27,6 +27,31 @@ jobs:
         with:
           fetch-depth: 1
 
+      - name: Generate version string
+        id: version
+        run: |
+          export TZ='Asia/Shanghai'
+
+          YEAR=$(date +%y)
+          WEEK=$(date +%-U)
+
+          case $(date +%w) in
+            0) D="s" ;;
+            1) D="m" ;;
+            2) D="t" ;;
+            3) D="w" ;;
+            4) D="t" ;;
+            5) D="f" ;;
+            6) D="s" ;;
+          esac
+
+          STAMP="${YEAR}w${WEEK}${D}"
+          FULL="6.1.162-android14-StarKernel-${STAMP}"
+
+          echo "STAMP=${STAMP}" >> "$GITHUB_OUTPUT"
+          echo "FULL=${FULL}"   >> "$GITHUB_OUTPUT"
+          echo "Generated: ${FULL}"
+
       - name: Install build dependencies
         run: |
           sudo apt-get update -qq
@@ -35,13 +60,8 @@ jobs:
             curl flex git kmod libelf-dev libssl-dev \
             lz4 make pahole python3 rsync wget zip zstd
 
-      # ──────────────────────────────────────────────
-      # 安装 Clang 17（= AOSP r487747c 对应上游版本）
-      # 使用 LLVM 官方 APT 仓库，稳定可靠
-      # ──────────────────────────────────────────────
       - name: Install Clang 17 toolchain
         run: |
-          # 添加 LLVM 官方 APT key 和仓库
           wget -qO- https://apt.llvm.org/llvm-snapshot.gpg.key \
             | sudo gpg --dearmor -o /usr/share/keyrings/llvm-snapshot.gpg
           echo "deb [signed-by=/usr/share/keyrings/llvm-snapshot.gpg] \
@@ -50,21 +70,16 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends \
             clang-17 lld-17 llvm-17
-
-          # 验证
           /usr/lib/llvm-17/bin/clang --version
           /usr/lib/llvm-17/bin/ld.lld --version
 
-      # ──────────────────────────────────────────────
-      # 生成 .config
-      # LLVM=/path/  → kernel Makefile 展开为 /path/clang、/path/ld.lld ...
-      # ──────────────────────────────────────────────
       - name: Configure kernel (gki_defconfig)
         run: |
           make O=out \
                ARCH=arm64 \
                LLVM=/usr/lib/llvm-17/bin/ \
                LLVM_IAS=1 \
+               LOCALVERSION="-android14-StarKernel-${{ steps.version.outputs.STAMP }}" \
                -j$(nproc) \
                gki_defconfig
 
@@ -74,6 +89,7 @@ jobs:
                ARCH=arm64 \
                LLVM=/usr/lib/llvm-17/bin/ \
                LLVM_IAS=1 \
+               LOCALVERSION="-android14-StarKernel-${{ steps.version.outputs.STAMP }}" \
                -j$(nproc)
 
       - name: Collect artifacts
@@ -87,6 +103,6 @@ jobs:
       - name: Upload kernel image
         uses: actions/upload-artifact@v4
         with:
-          name: StarKernel-${{ github.ref_name }}-${{ github.sha }}
+          name: ${{ steps.version.outputs.FULL }}
           path: artifacts/
           retention-days: 7
