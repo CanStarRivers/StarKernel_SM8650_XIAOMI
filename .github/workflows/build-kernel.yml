@@ -1,11 +1,7 @@
-# .github/workflows/build-kernel.yml
 name: Build StarKernel
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - android14-6.1.162-20260506
 
 jobs:
   build:
@@ -31,10 +27,8 @@ jobs:
         id: version
         run: |
           export TZ='Asia/Shanghai'
-
           YEAR=$(date +%y)
           WEEK=$(date +%-U)
-
           case $(date +%w) in
             0) D="s" ;;
             1) D="m" ;;
@@ -44,10 +38,8 @@ jobs:
             5) D="f" ;;
             6) D="s" ;;
           esac
-
           STAMP="${YEAR}w${WEEK}${D}"
           FULL="6.1.162-android14-StarKernel-${STAMP}"
-
           echo "STAMP=${STAMP}" >> "$GITHUB_OUTPUT"
           echo "FULL=${FULL}"   >> "$GITHUB_OUTPUT"
           echo "Generated: ${FULL}"
