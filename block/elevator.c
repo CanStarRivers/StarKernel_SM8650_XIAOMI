@@ -630,8 +630,10 @@ static inline bool elv_support_iosched(struct request_queue *q)
 }
 
 /*
- * For single queue devices, default to using mq-deadline. If we have multiple
- * queues or mq-deadline is not available, default to "none".
+ * Block layer default elevator selection.
+ *
+ * This implementation defaults to "none" scheduler for all devices,
+ * avoiding mq-deadline overhead in modern multi-queue systems.
  */
 static struct elevator_type *elevator_get_default(struct request_queue *q)
 {
@@ -642,7 +644,7 @@ static struct elevator_type *elevator_get_default(struct request_queue *q)
 	    !blk_mq_is_shared_tags(q->tag_set->flags))
 		return NULL;
 
-	return elevator_get(q, "mq-deadline", false);
+	return elevator_get(q, "none", false);
 }
 
 /*
