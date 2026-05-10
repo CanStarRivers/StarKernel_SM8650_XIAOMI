@@ -23,27 +23,6 @@ jobs:
         with:
           fetch-depth: 1
 
-      - name: Generate version string
-        id: version
-        run: |
-          export TZ='Asia/Shanghai'
-          YEAR=$(date +%y)
-          WEEK=$(date +%-U)
-          case $(date +%w) in
-            0) D="s" ;;
-            1) D="m" ;;
-            2) D="t" ;;
-            3) D="w" ;;
-            4) D="t" ;;
-            5) D="f" ;;
-            6) D="s" ;;
-          esac
-          STAMP="${YEAR}w${WEEK}${D}"
-          FULL="6.1.162-android14-StarKernel-${STAMP}"
-          echo "STAMP=${STAMP}" >> "$GITHUB_OUTPUT"
-          echo "FULL=${FULL}"   >> "$GITHUB_OUTPUT"
-          echo "Generated: ${FULL}"
-
       - name: Install build dependencies
         run: |
           sudo apt-get update -qq
@@ -71,7 +50,7 @@ jobs:
                ARCH=arm64 \
                LLVM=/usr/lib/llvm-17/bin/ \
                LLVM_IAS=1 \
-               LOCALVERSION="-android14-StarKernel-${{ steps.version.outputs.STAMP }}" \
+               LOCALVERSION="-android14-StarKernel" \
                -j$(nproc) \
                gki_defconfig
 
@@ -81,7 +60,7 @@ jobs:
                ARCH=arm64 \
                LLVM=/usr/lib/llvm-17/bin/ \
                LLVM_IAS=1 \
-               LOCALVERSION="-android14-StarKernel-${{ steps.version.outputs.STAMP }}" \
+               LOCALVERSION="-android14-StarKernel" \
                -j$(nproc)
 
       - name: Collect artifacts
@@ -95,6 +74,6 @@ jobs:
       - name: Upload kernel image
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ steps.version.outputs.FULL }}
+          name: StarKernel-${{ github.sha }}
           path: artifacts/
           retention-days: 7
