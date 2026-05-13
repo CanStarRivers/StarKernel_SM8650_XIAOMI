@@ -299,7 +299,9 @@ LZ4LIB_API int LZ4_compress_fast_extState (void* state, const char* src, char* d
  *        a dstCapacity which is > decompressedSize, by at least 1 byte.
  *        See https://github.com/lz4/lz4/issues/859 for details
  */
-LZ4LIB_API int LZ4_compress_destSize(const char* src, char* dst, int* srcSizePtr, int targetDstSize);
+LZ4LIB_API int LZ4_compress_destSize(const char* src, char* dst,
+                                     int* srcSizePtr, int targetDstSize,
+                                     void* wrkmem);
 
 /*! LZ4_decompress_safe_partial() :
  *  Decompress an LZ4 compressed block, of size 'srcSize' at position 'src',
