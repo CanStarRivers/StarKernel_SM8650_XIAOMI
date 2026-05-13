@@ -51,6 +51,19 @@
 **/
 #undef LZ4HC_HEAPMODE
 #define LZ4HC_HEAPMODE 1
+
+/* Kernel memory allocators for LZ4HC heap mode */
+#ifdef __KERNEL__
+#include <linux/slab.h>
+#ifndef ALLOC
+#  define ALLOC(s)          kvmalloc(s, GFP_KERNEL)
+#endif
+#ifndef ALLOC_AND_ZERO
+#  define ALLOC_AND_ZERO(s) kvzalloc(s, GFP_KERNEL)
+#endif
+#ifndef FREEMEM
+#  define FREEMEM(p)        kvfree(p)
+#endif
 #endif
 
 
