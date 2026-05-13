@@ -49,8 +49,8 @@
  *  in stack (0:fastest), or in heap (1:default, requires malloc()).
  *  Since workspace is rather large, heap mode is recommended.
 **/
-#ifndef LZ4HC_HEAPMODE
-#  define LZ4HC_HEAPMODE 1
+#undef LZ4HC_HEAPMODE
+#define LZ4HC_HEAPMODE 1
 #endif
 
 
