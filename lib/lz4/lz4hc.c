@@ -1369,7 +1369,7 @@ static int LZ4HC_compress_optimal( LZ4HC_CCtx_internal* ctx,
     const dictCtx_directive dict,
     const HCfavor_e favorDecSpeed);
 
-LZ4_FORCE_INLINE int
+static __attribute__((noinline)) int
 LZ4HC_compress_generic_internal (
             LZ4HC_CCtx_internal* const ctx,
             const char* const src,
