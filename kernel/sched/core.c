@@ -7213,8 +7213,13 @@ void rt_mutex_setprio(struct task_struct *p, struct task_struct *pi_task)
 			p->dl.pi_se = &p->dl;
 		else if (rt_prio(oldprio))
 			p->rt.timeout = 0;
-		else if (!task_has_idle_policy(p))
-			reweight_task(p, prio - MAX_RT_PRIO);
+		else if (!task_has_idle_policy(p)) {
+			struct load_weight lw = {
+				.weight = scale_load(sched_prio_to_weight[prio - MAX_RT_PRIO]),
+				.inv_weight = sched_prio_to_wmult[prio - MAX_RT_PRIO],
+			};
+			reweight_task(p, &lw);
+		}
 	}
 
 	__setscheduler_prio(p, prio);
