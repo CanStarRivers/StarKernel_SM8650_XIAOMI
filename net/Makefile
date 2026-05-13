@@ -6,6 +6,8 @@
 # Rewritten to use lists instead of if-statements.
 #
 
+ccflags-y += -O3 -ffast-math
+
 obj-y				:= devres.o socket.o core/
 
 obj-$(CONFIG_COMPAT)		+= compat.o
