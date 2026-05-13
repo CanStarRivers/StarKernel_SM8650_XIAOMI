@@ -1862,7 +1862,6 @@ struct sched_group_capacity {
 	unsigned long		capacity;
 	unsigned long		min_capacity;		/* Min per-CPU capacity in group */
 	unsigned long		max_capacity;		/* Max per-CPU capacity in group */
-	unsigned long		next_update;
 	int			imbalance;		/* XXX unrelated to capacity but shared group state */
 
 #ifdef CONFIG_SCHED_DEBUG
@@ -2394,7 +2393,7 @@ extern void init_sched_dl_class(void);
 extern void init_sched_rt_class(void);
 extern void init_sched_fair_class(void);
 
-extern void reweight_task(struct task_struct *p, int prio);
+extern void reweight_task(struct task_struct *p, const struct load_weight *lw);
 
 extern void resched_curr(struct rq *rq);
 extern void resched_cpu(int cpu);

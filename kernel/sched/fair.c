@@ -814,7 +814,8 @@ void init_entity_runnable_average(struct sched_entity *se)
  * With new tasks being created, their initial util_avgs are extrapolated
  * based on the cfs_rq's current util_avg:
  *
- *   util_avg = cfs_rq->util_avg / (cfs_rq->load_avg + 1) * se.load.weight
+ *   util_avg = cfs_rq->avg.util_avg / (cfs_rq->avg.load_avg + 1)
+ *		* se_weight(se)
  *
  * However, in many cases, the above util_avg does not give a desired
  * value. Moreover, the sum of the util_avgs may be divergent, such
@@ -861,7 +862,7 @@ void post_init_entity_util_avg(struct task_struct *p)
 
 	if (cap > 0) {
 		if (cfs_rq->avg.util_avg != 0) {
-			sa->util_avg  = cfs_rq->avg.util_avg * se->load.weight;
+			sa->util_avg  = cfs_rq->avg.util_avg * se_weight(se);
 			sa->util_avg /= (cfs_rq->avg.load_avg + 1);
 
 			if (sa->util_avg > cap)
@@ -1805,7 +1806,7 @@ static void update_numa_stats(struct task_numa_env *env,
 		ns->nr_running += rq->cfs.h_nr_running;
 		ns->compute_capacity += capacity_of(cpu);
 
-		if (find_idle && !rq->nr_running && idle_cpu(cpu)) {
+		if (find_idle && idle_core < 0 && !rq->nr_running && idle_cpu(cpu)) {
 			if (READ_ONCE(rq->numa_migrate_on) ||
 			    !cpumask_test_cpu(cpu, env->p->cpus_ptr))
 				continue;
@@ -1837,7 +1838,7 @@ static void task_numa_assign(struct task_numa_env *env,
 		int start = env->dst_cpu;
 
 		/* Find alternative idle CPU. */
-		for_each_cpu_wrap(cpu, cpumask_of_node(env->dst_nid), start) {
+		for_each_cpu_wrap(cpu, cpumask_of_node(env->dst_nid), start + 1) {
 			if (cpu == env->best_cpu || !idle_cpu(cpu) ||
 			    !cpumask_test_cpu(cpu, env->p->cpus_ptr)) {
 				continue;
@@ -2977,7 +2978,7 @@ static void task_numa_work(struct callback_head *work)
 	}
 
 	next_scan = now + msecs_to_jiffies(p->numa_scan_period);
-	if (cmpxchg(&mm->numa_next_scan, migrate, next_scan) != migrate)
+	if (!try_cmpxchg(&mm->numa_next_scan, &migrate, next_scan))
 		return;
 
 	/*
@@ -3344,15 +3345,14 @@ static void reweight_entity(struct cfs_rq *cfs_rq, struct sched_entity *se,
 
 }
 
-void reweight_task(struct task_struct *p, int prio)
+void reweight_task(struct task_struct *p, const struct load_weight *lw)
 {
 	struct sched_entity *se = &p->se;
 	struct cfs_rq *cfs_rq = cfs_rq_of(se);
 	struct load_weight *load = &se->load;
-	unsigned long weight = scale_load(sched_prio_to_weight[prio]);
 
-	reweight_entity(cfs_rq, se, weight);
-	load->inv_weight = sched_prio_to_wmult[prio];
+	reweight_entity(cfs_rq, se, lw->weight);
+	load->inv_weight = lw->inv_weight;
 }
 EXPORT_SYMBOL_GPL(reweight_task);
 
@@ -4292,6 +4292,11 @@ static inline unsigned long task_util(struct task_struct *p)
 	return READ_ONCE(p->se.avg.util_avg);
 }
 
+static inline unsigned long task_runnable(struct task_struct *p)
+{
+	return READ_ONCE(p->se.avg.runnable_avg);
+}
+
 static inline unsigned long _task_util_est(struct task_struct *p)
 {
 	struct util_est ue = READ_ONCE(p->se.avg.util_est);
@@ -4414,6 +4419,14 @@ static inline void util_est_update(struct cfs_rq *cfs_rq,
 	 */
 	if (task_util(p) > capacity_orig_of(cpu_of(rq_of(cfs_rq))))
 		return;
+	/*
+	 * To avoid underestimate of task utilization, skip updates of EWMA if
+	 * we cannot grant that thread got all CPU time it wanted.
+	 */
+	if ((ue.enqueued + UTIL_EST_MARGIN) < task_runnable(p))
+		goto done;
+
+
 
 	/*
 	 * Update Task's estimated utilization
@@ -6921,7 +6934,7 @@ select_idle_capacity(struct task_struct *p, struct sched_domain *sd, int target)
 	util_min = uclamp_eff_value(p, UCLAMP_MIN);
 	util_max = uclamp_eff_value(p, UCLAMP_MAX);
 
-	for_each_cpu_wrap(cpu, cpus, target) {
+	for_each_cpu_wrap(cpu, cpus, target + 1) {
 		unsigned long cpu_cap = capacity_of(cpu);
 
 		if (!available_idle_cpu(cpu) && !sched_idle_cpu(cpu))
@@ -9076,11 +9089,6 @@ void update_group_capacity(struct sched_domain *sd, int cpu)
 	struct sched_domain *child = sd->child;
 	struct sched_group *group, *sdg = sd->groups;
 	unsigned long capacity, min_capacity, max_capacity;
-	unsigned long interval;
-
-	interval = msecs_to_jiffies(sd->balance_interval);
-	interval = clamp(interval, 1UL, max_load_balance_interval);
-	sdg->sgc->next_update = jiffies + interval;
 
 	if (!child) {
 		update_cpu_capacity(sd, cpu);
@@ -9480,18 +9488,6 @@ static bool update_sd_pick_busiest(struct lb_env *env,
 	if (!sgs->sum_h_nr_running)
 		return false;
 
-	/*
-	 * Don't try to pull misfit tasks we can't help.
-	 * We can use max_capacity here as reduction in capacity on some
-	 * CPUs in the group should either be possible to resolve
-	 * internally or be covered by avg_load imbalance (eventually).
-	 */
-	if ((env->sd->flags & SD_ASYM_CPUCAPACITY) &&
-	    (sgs->group_type == group_misfit_task) &&
-	    (!capacity_greater(capacity_of(env->dst_cpu), sg->sgc->max_capacity) ||
-	     sds->local_stat.group_type != group_has_spare))
-		return false;
-
 	if (sgs->group_type > busiest->group_type)
 		return true;
 
@@ -9563,18 +9559,6 @@ static bool update_sd_pick_busiest(struct lb_env *env,
 
 		break;
 	}
-
-	/*
-	 * Candidate sg has no more than one task per CPU and has higher
-	 * per-CPU capacity. Migrating tasks to less capable CPUs may harm
-	 * throughput. Maximize throughput, power/energy consequences are not
-	 * considered.
-	 */
-	if ((env->sd->flags & SD_ASYM_CPUCAPACITY) &&
-	    (sgs->group_type <= group_fully_busy) &&
-	    (capacity_greater(sg->sgc->min_capacity, capacity_of(env->dst_cpu))))
-		return false;
-
 	return true;
 }
 
@@ -10035,9 +10019,7 @@ static inline void update_sd_lb_stats(struct lb_env *env, struct sd_lb_stats *sd
 			sds->local = sg;
 			sgs = local;
 
-			if (env->idle != CPU_NEWLY_IDLE ||
-			    time_after_eq(jiffies, sg->sgc->next_update))
-				update_group_capacity(env->sd, env->dst_cpu);
+			update_group_capacity(env->sd, env->dst_cpu);
 		}
 
 		update_sg_lb_stats(env, sds, sg, sgs, &sg_status);
@@ -11549,7 +11531,7 @@ static void _nohz_idle_balance(struct rq *this_rq, unsigned int flags)
 	 * Start with the next CPU after this_cpu so we will end with this_cpu and let a
 	 * chance for other idle cpu to pull load.
 	 */
-	for_each_cpu_wrap(balance_cpu,  nohz.idle_cpus_mask, this_cpu+1) {
+	for_each_cpu(balance_cpu, nohz.idle_cpus_mask) {
 		if (!idle_cpu(balance_cpu))
 			continue;
 
