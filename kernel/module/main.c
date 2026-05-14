@@ -2306,7 +2306,7 @@ static char *custom_module_blacklist[] = {
 	"cameralog", "f_fs_ipc_log", "mi_log",
 	/* Debug */
 	"qcom_cpufreq_hw_debug", "qcom_iommu_debug", "qti_battery_debug", "rdbg", "spmi_glink_debug", "spmi_pmic_arb_debug",
-	"debug_ext", "ehset", "lvstest", "icc_debug", "icc_test", "pmic_glink_debug", "rdbg",
+	"debug_ext", "ehset", "lvstest", "icc_debug", "icc_test", "pmic_glink_debug",
 	/* STM (System Trace Module devices) */
 	"stm_console", "stm_core", "stm_ftrace", "stm_p_basic", "stm_p_ost",
 	/* Coresight */
@@ -2314,8 +2314,6 @@ static char *custom_module_blacklist[] = {
 	"coresight_hwevent", "coresight_remote_etm", "coresight_replicator", "coresight_stm",
 	"coresight_tgu", "coresight_tmc", "coresight_tmc_sec", "coresight_tpda", "coresight_tpdm",
 	"coresight_trace_noc",
-	/* sched-walt */
-	"mist",
 };
 
 static bool blacklisted(const char *module_name)
