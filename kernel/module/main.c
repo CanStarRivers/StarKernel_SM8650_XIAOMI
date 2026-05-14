@@ -703,16 +703,14 @@ SYSCALL_DEFINE2(delete_module, const char __user *, name_user,
 	struct module *mod;
 	char name[MODULE_NAME_LEN];
 	char buf[MODULE_FLAGS_BUF_SIZE];
-	int ret, len, forced = 0;
+	int ret, forced = 0;
 
 	if (!capable(CAP_SYS_MODULE) || modules_disabled)
 		return -EPERM;
 
-	len = strncpy_from_user(name, name_user, MODULE_NAME_LEN);
-	if (len == 0 || len == MODULE_NAME_LEN)
-		return -ENOENT;
-	if (len < 0)
-		return len;
+	if (strncpy_from_user(name, name_user, MODULE_NAME_LEN-1) < 0)
+		return -EFAULT;
+	name[MODULE_NAME_LEN-1] = '\0';
 
 	audit_log_kern_module(name);
 
@@ -2304,35 +2302,21 @@ int __weak module_frob_arch_sections(Elf_Ehdr *hdr,
 /* module_blacklist is a comma-separated list of module names */
 static char *module_blacklist;
 static char *custom_module_blacklist[] = {
-#if IS_BUILTIN(CONFIG_CRYPTO_LZO)
-    "lzo", "lzo_rle",
-#endif
-#if IS_BUILTIN(CONFIG_ZRAM)
-    "zram",
-#endif
-#if IS_BUILTIN(CONFIG_ZSMALLOC)
-    "zsmalloc",
-#endif
-#if IS_BUILTIN(CONFIG_CPU_IDLE_GOV_QCOM_LPM)
-    "qcom_lpm",
-#endif
-#ifdef CONFIG_MACH_XIAOMI_MARBLE
-    /* Not required */
-    "qca6750", "icnss2", "cs35l41_dlkm", "atmel_mxt_ts", "focaltech_fts", "nt36xxx_i2c", "nt36xxx_spi", "synaptics_dsx",
-    /* Already built into the kernel image */
-    "aw882xx_dlkm",
-    /* Useless logs */
-    "cameralog", "f_fs_ipc_log",
-    /* Debug */
-    "qcom_cpufreq_hw_debug", "qcom_iommu_debug", "qti_battery_debug", "rdbg", "spmi_glink_debug", "spmi_pmic_arb_debug",
-    "debug_ext", "ehset", "lvstest",
-    /* Coresight */
-    "coresight", "coresight_csr", "coresight_cti", "coresight_dummy", "coresight_funnel",
-    "coresight_hwevent", "coresight_remote_etm", "coresight_replicator", "coresight_stm",
-    "coresight_tgu", "coresight_tmc", "coresight_tpda", "coresight_tpdm",
-    /* STM (System Trace Module devices) */
-    "stm_console", "stm_core", "stm_ftrace", "stm_p_basic", "stm_p_ost",
-#endif
+	/* Not required */
+	"qca6750", "icnss2", "cs35l41_dlkm", "atmel_mxt_ts", "focaltech_fts", "nt36xxx_i2c", "nt36xxx_spi", "synaptics_dsx",
+	/* Already built into the kernel image */
+	"aw882xx_dlkm",
+	/* Useless logs */
+	"cameralog", "f_fs_ipc_log",
+	/* Debug */
+	"qcom_cpufreq_hw_debug", "qcom_iommu_debug", "qti_battery_debug", "rdbg", "spmi_glink_debug", "spmi_pmic_arb_debug",
+	"debug_ext", "ehset", "lvstest",
+	/* Coresight */
+	"coresight", "coresight_csr", "coresight_cti", "coresight_dummy", "coresight_funnel",
+	"coresight_hwevent", "coresight_remote_etm", "coresight_replicator", "coresight_stm",
+	"coresight_tgu", "coresight_tmc", "coresight_tpda", "coresight_tpdm",
+	/* STM (System Trace Module devices) */
+	"stm_console", "stm_core", "stm_ftrace", "stm_p_basic", "stm_p_ost",
 };
 
 static bool blacklisted(const char *module_name)
@@ -2823,7 +2807,7 @@ static int load_module(struct load_info *info, const char __user *uargs,
 	 * if it's blacklisted.
 	 */
 	if (blacklisted(info->name)) {
-		err = -EPERM;
+		// err = -EPERM;
 		pr_err("Module %s is blacklisted\n", info->name);
 		goto free_copy;
 	}
