@@ -27,6 +27,7 @@
 #include <linux/sched/task.h>
 #include <linux/delayacct.h>
 #include "swap.h"
+#include <linux/kthread.h>
 
 static void end_swap_bio_write(struct bio *bio)
 {
@@ -174,6 +175,32 @@ bad_bmap:
 	goto out;
 }
 
+static bool swap_sched_async_compress(struct page *page)
+{
+	struct swap_info_struct *sis;
+	pg_data_t *pgdat = NODE_DATA(numa_node_id());
+
+	if (unlikely(!pgdat->kcompressd))
+		return false;
+
+	if (!current_is_kswapd())
+		return false;
+
+	if (!PageAnon(page))
+		return false;
+
+	sis = page_swap_info(page);
+	if (data_race(sis->flags & SWP_SYNCHRONOUS_IO)) {
+		if (kfifo_avail(&pgdat->kcompress_fifo) >= sizeof(page) &&
+			kfifo_in(&pgdat->kcompress_fifo, &page, sizeof(page))) {
+			wake_up_interruptible(&pgdat->kcompressd_wait);
+			return true;
+		}
+	}
+
+	return false;
+}
+
 /*
  * We may have stale swap cache pages in memory: notice
  * them here and get rid of the unnecessary final write.
@@ -203,9 +230,42 @@ int swap_writepage(struct page *page, struct writeback_control *wbc)
 		folio_end_writeback(folio);
 		goto out;
 	}
+	
+	/*
+	 * Compression within zswap and zram might block rmap, unmap
+	 * of both file and anon pages, try to do compression async
+	 * if possible
+	 */
+	if (swap_sched_async_compress(page))
+		return 0;
+
 	ret = __swap_writepage(&folio->page, wbc);
 out:
 	return ret;
+}
+
+int kcompressd(void *p)
+{
+	pg_data_t *pgdat = (pg_data_t *)p;
+	struct page *page;
+	struct writeback_control wbc = {
+		.sync_mode = WB_SYNC_NONE,
+		.nr_to_write = SWAP_CLUSTER_MAX,
+		.range_start = 0,
+		.range_end = LLONG_MAX,
+		.for_reclaim = 1,
+	};
+
+	while (!kthread_should_stop()) {
+		wait_event_interruptible(pgdat->kcompressd_wait,
+				!kfifo_is_empty(&pgdat->kcompress_fifo));
+
+		while (!kfifo_is_empty(&pgdat->kcompress_fifo)) {
+			if (kfifo_out(&pgdat->kcompress_fifo, &page, sizeof(page)))
+				__swap_writepage(page, &wbc);  // ← 2参数，非 3参数
+		}
+	}
+	return 0;
 }
 
 static inline void count_swpout_vm_event(struct page *page)

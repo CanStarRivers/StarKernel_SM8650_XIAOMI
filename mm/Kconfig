@@ -24,7 +24,7 @@ menuconfig SWAP
 
 config ZSWAP
 	bool "Compressed cache for swap pages"
-	depends on SWAP
+	depends on SWAP && !ZRAM
 	select FRONTSWAP
 	select CRYPTO
 	select ZPOOL
