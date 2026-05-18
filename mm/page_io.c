@@ -29,6 +29,8 @@
 #include "swap.h"
 #include <linux/kthread.h>
 
+extern struct kcompress_t kcompress_data[MAX_NUMNODES];
+
 static void end_swap_bio_write(struct bio *bio)
 {
 	struct page *page = bio_first_page_all(bio);
@@ -178,9 +180,9 @@ bad_bmap:
 static bool swap_sched_async_compress(struct page *page)
 {
 	struct swap_info_struct *sis;
-	pg_data_t *pgdat = NODE_DATA(numa_node_id());
+	int node_id = numa_node_id();
 
-	if (unlikely(!pgdat->kcompressd))
+	if (unlikely(!kcompress_data[node_id].kcompressd))
 		return false;
 
 	if (!current_is_kswapd())
@@ -191,9 +193,9 @@ static bool swap_sched_async_compress(struct page *page)
 
 	sis = page_swap_info(page);
 	if (data_race(sis->flags & SWP_SYNCHRONOUS_IO)) {
-		if (kfifo_avail(&pgdat->kcompress_fifo) >= sizeof(page) &&
-			kfifo_in(&pgdat->kcompress_fifo, &page, sizeof(page))) {
-			wake_up_interruptible(&pgdat->kcompressd_wait);
+		if (kfifo_avail(&kcompress_data[node_id].kcompress_fifo) >= sizeof(page) &&
+			kfifo_in(&kcompress_data[node_id].kcompress_fifo, &page, sizeof(page))) {
+			wake_up_interruptible(&kcompress_data[node_id].kcompressd_wait);
 			return true;
 		}
 	}
@@ -247,6 +249,7 @@ out:
 int kcompressd(void *p)
 {
 	pg_data_t *pgdat = (pg_data_t *)p;
+	int node_id = pgdat->node_id;
 	struct page *page;
 	struct writeback_control wbc = {
 		.sync_mode = WB_SYNC_NONE,
@@ -256,15 +259,33 @@ int kcompressd(void *p)
 		.for_reclaim = 1,
 	};
 
-	while (!kthread_should_stop()) {
-		wait_event_interruptible(pgdat->kcompressd_wait,
-				!kfifo_is_empty(&pgdat->kcompress_fifo));
+	/*
+	 * Tell the memory management that we're a "memory allocator",
+	 * and that if we need more memory we should get access to it
+	 * regardless (see "__alloc_pages()"). "kswapd" should
+	 * never get caught in the normal page freeing logic.
+	 *
+	 * (Kswapd normally doesn't need memory anyway, but sometimes
+	 * you need a small amount of memory in order to be able to
+	 * page out something else, and this flag essentially protects
+	 * us from recursively trying to free more memory as we're
+	 * trying to free the first piece of memory in the first place).
+	 */
+	current->flags |= PF_MEMALLOC | PF_KSWAPD;
 
-		while (!kfifo_is_empty(&pgdat->kcompress_fifo)) {
-			if (kfifo_out(&pgdat->kcompress_fifo, &page, sizeof(page)))
+	while (!kthread_should_stop()) {
+	
+		wait_event_interruptible(kcompress_data[node_id].kcompressd_wait,
+		
+				!kfifo_is_empty(&kcompress_data[node_id].kcompress_fifo));
+
+		while (!kfifo_is_empty(&kcompress_data[node_id].kcompress_fifo)) {
+			if (kfifo_out(&kcompress_data[node_id].kcompress_fifo, &page, sizeof(page))) {
 				__swap_writepage(page, &wbc);  // ← 2参数，非 3参数
 		}
 	}
+	current->flags &= ~(PF_MEMALLOC | PF_KSWAPD);
+	
 	return 0;
 }
 

@@ -1292,11 +1292,6 @@ typedef struct pglist_data {
 
 	int kswapd_failures;		/* Number of 'reclaimed == 0' runs */
 
-#define KCOMPRESS_FIFO_SIZE 256
-	wait_queue_head_t kcompressd_wait;
-	struct task_struct *kcompressd;
-	struct kfifo kcompress_fifo;
-
 	ANDROID_OEM_DATA(1);
 #ifdef CONFIG_COMPACTION
 	int kcompactd_max_order;
@@ -1376,6 +1371,13 @@ typedef struct pglist_data {
 	struct memory_tier __rcu *memtier;
 #endif
 } pg_data_t;
+
+#define KCOMPRESS_FIFO_SIZE 256
+struct kcompress_t {
+	wait_queue_head_t kcompressd_wait;
+	struct task_struct *kcompressd;
+	struct kfifo kcompress_fifo;
+};
 
 #define node_present_pages(nid)	(NODE_DATA(nid)->node_present_pages)
 #define node_spanned_pages(nid)	(NODE_DATA(nid)->node_spanned_pages)
