@@ -1,0 +1,5 @@
+[33mf43c482c1[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mandroid14-6.1.162-dev[m[33m, [m[1;31morigin/android14-6.1.162-dev[m[33m)[m UPSTREAM: f2fs: Avoid dynamic memory allocation in f2fs_match_ci_name()
+[33mee0816373[m sched: Remove rvh_effective_cpu_util vendor hook and fix build
+[33me7d5297d4[m cpufreq: schedutil: Ignore rate limit on scale-up with FIE and set default to 2000 µs
+[33m9de63ed1b[m ANDROID: Compute dmabuf info for forks from scratch
+[33mf92cb0132[m ANDROID: dma-buf: Hoist files_fdtable()->max_fds
